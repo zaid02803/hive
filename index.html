@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Hive Monitor</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --card: #ffffff; --ink: #1d1d1b; --muted: #6b6a64; --line: #e3e1d9;
+    --temp: #b4530a; --hum: #1f6f9e; --warn-bg: #fff4d6; --warn-ink: #7a5300; --bad: #a61b1b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151514; --card: #1f1f1d; --ink: #f1efe8; --muted: #a3a197; --line: #34332f;
+      --temp: #f0a050; --hum: #6cb6e0; --warn-bg: #3a3020; --warn-ink: #f3d48a; --bad: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 20px 16px 40px; }
+  h1 { font-size: 22px; margin: 4px 0 2px; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+  .now { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  .label { color: var(--muted); font-size: 13px; }
+  .big { font-size: 38px; font-weight: 600; letter-spacing: -0.5px; line-height: 1.1; margin-top: 4px; }
+  .small { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  .temp .big { color: var(--temp); }
+  .hum .big { color: var(--hum); }
+  .warn { background: var(--warn-bg); color: var(--warn-ink); border-radius: 8px; padding: 10px 12px;
+          font-size: 14px; margin-bottom: 12px; }
+  .chart { margin-bottom: 12px; }
+  .chart h2 { font-size: 14px; font-weight: 600; margin: 0 0 6px; }
+  svg { display: block; width: 100%; height: auto; }
+  .axis { fill: var(--muted); font-size: 11px; }
+  .grid { stroke: var(--line); stroke-width: 1; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 13px; color: var(--muted); }
+  .stats b { display: block; color: var(--ink); font-size: 15px; font-weight: 600; }
+  .row { display: flex; justify-content: space-between; align-items: baseline; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 18px; }
+  .empty { text-align: center; padding: 48px 16px; color: var(--muted); }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const dec = s => [...s].reduce((v, c) => v * 64 + B64.indexOf(c), 0);
+
+function parse(frag) {
+  if (!frag || frag[0] !== "a" || frag.length < 21) return null;
+  const head = {
+    tmin: dec(frag.slice(1, 7)), idx: dec(frag.slice(7, 9)), mv: dec(frag.slice(9, 11)) * 2,
+    pct: dec(frag.slice(11, 13)), iv: dec(frag.slice(13, 15)) || 30, flags: dec(frag.slice(15, 17))
+  };
+  const ring = frag.slice(17), n = Math.floor(ring.length / 4), pts = [];
+  for (let j = 0; j < n; j++) {
+    const v = dec(ring.slice(4 * j, 4 * j + 4)), tc = v >> 12, hc = v & 0xfff;
+    if (!tc) continue;
+    const age = (head.idx - j + n) % n;
+    pts.push({ age, t: head.tmin ? (head.tmin - age * head.iv) * 60000 : null,
+               temp: tc / 20 - 40, rh: hc / 40 });
+  }
+  pts.sort((a, b) => b.age - a.age);
+  return { head, pts, n };
+}
+
+const fmtTime = ms => new Date(ms).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" });
+const c2f = c => c * 9 / 5 + 32;
+function ago(ms) {
+  const m = Math.round((Date.now() - ms) / 60000);
+  if (m < 0) return "just now";
+  if (m < 1) return "just now";
+  if (m < 60) return m + " min ago";
+  const h = Math.round(m / 60);
+  if (h < 48) return h + (h === 1 ? " hour ago" : " hours ago");
+  return Math.round(h / 24) + " days ago";
+}
+
+function chart(pts, key, color, unit, minSpan, head) {
+  const W = 560, H = 170, L = 34, R = 8, T = 8, B = 22;
+  const vals = pts.map(p => p[key]);
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  if (hi - lo < minSpan) { const m = (hi + lo) / 2; lo = m - minSpan / 2; hi = m + minSpan / 2; }
+  const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+  const span = head.n * head.iv;                       // minutes covered by the tag
+  const x = p => head.tmin
+    ? L + (W - L - R) * (1 - p.age * head.iv / span)
+    : L + (W - L - R) * (1 - p.age / head.n);
+  const y = v => T + (H - T - B) * (1 - (v - lo) / (hi - lo));
+  let d = "", prev = null;
+  for (const p of pts) {
+    const gap = prev && (prev.age - p.age) > 1;
+    d += (prev === null || gap ? "M" : "L") + x(p).toFixed(1) + " " + y(p[key]).toFixed(1) + " ";
+    prev = p;
+  }
+  let grid = "";
+  if (head.tmin) {                                     // a line at each local midnight
+    const end = head.tmin * 60000, start = end - span * 60000;
+    const day = new Date(end); day.setHours(0, 0, 0, 0);
+    for (let t = day.getTime(); t > start; t -= 86400000) {
+      const gx = L + (W - L - R) * (t - start) / (end - start);
+      if (gx < L + 12) continue;
+      grid += `<line class="grid" x1="${gx}" x2="${gx}" y1="${T}" y2="${H - B}"/>` +
+              `<text class="axis" x="${gx + 3}" y="${H - 6}">${new Date(t).toLocaleDateString([], { weekday: "short" })}</text>`;
+    }
+  }
+  const ticks = [hi - pad, lo + pad].map(v =>
+    `<text class="axis" x="${L - 4}" y="${y(v) + 4}" text-anchor="end">${v.toFixed(0)}</text>` +
+    `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke-dasharray="2 4"/>`).join("");
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${key === "temp" ? "Temperature" : "Humidity"} over the last 7 days">
+    ${grid}${ticks}<path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/></svg>`;
+}
+
+function stats(pts, key, fmt, iv) {
+  const last = pts.filter(p => p.age * iv < 1440);
+  if (!last.length) return "";
+  const v = last.map(p => p[key]);
+  const avg = v.reduce((a, b) => a + b, 0) / v.length;
+  return `<div class="stats"><div>Low 24 h<b>${fmt(Math.min(...v))}</b></div>
+          <div>Average<b>${fmt(avg)}</b></div><div>High 24 h<b>${fmt(Math.max(...v))}</b></div></div>`;
+}
+
+function render() {
+  const app = document.getElementById("app");
+  const hive = new URLSearchParams(location.search).get("h") || "";
+  const data = parse(location.hash.slice(1));
+  document.title = hive ? "Hive " + hive : "Hive Monitor";
+  if (!data || !data.pts.length) {
+    app.innerHTML = `<h1>${hive ? "Hive " + hive : "Hive monitor"}</h1>
+      <div class="empty">Hold your phone against the lid of the box to see the readings.</div>`;
+    return;
+  }
+  const { head, pts } = data, latest = pts[pts.length - 1];
+  const geo = { n: data.n, iv: head.iv, tmin: head.tmin };
+  const warns = [];
+  if (head.flags & 1) warns.push("The box's clock isn't set, so the times are missing.");
+  if (head.flags & 2) warns.push("Battery is low. Charge it soon.");
+  if (head.flags & 4) warns.push("The sensor didn't answer on the last reading. Check the long cable.");
+  if (head.tmin && Date.now() - head.tmin * 60000 > (2 * head.iv + 30) * 60000)
+    warns.push("No new readings since " + fmtTime(head.tmin * 60000) + ". The battery may be flat.");
+  const when = head.tmin ? `Updated ${ago(head.tmin * 60000)}, ${fmtTime(head.tmin * 60000)}` : "Latest reading";
+  const batt = head.mv ? `Battery ${head.pct}%` : "";
+  const t1 = v => v.toFixed(1) + " °C", h0 = v => v.toFixed(0) + "%";
+  app.innerHTML = `
+    <h1>Hive ${hive}</h1>
+    <p class="sub">${when}${batt ? " · " + batt : ""}</p>
+    ${warns.map(w => `<div class="warn">${w}</div>`).join("")}
+    <div class="now">
+      <div class="card temp"><div class="label">Temperature</div>
+        <div class="big">${latest.temp.toFixed(1)}°C</div><div class="small">${c2f(latest.temp).toFixed(0)} °F</div></div>
+      <div class="card hum"><div class="label">Humidity</div>
+        <div class="big">${latest.rh.toFixed(0)}%</div><div class="small">relative</div></div>
+    </div>
+    <div class="card chart"><div class="row"><h2>Temperature, last 7 days</h2><span class="label">°C</span></div>
+      ${chart(pts, "temp", "var(--temp)", "°C", 4, geo)}${stats(pts, "temp", t1, head.iv)}</div>
+    <div class="card chart"><div class="row"><h2>Humidity, last 7 days</h2><span class="label">%</span></div>
+      ${chart(pts, "rh", "var(--hum)", "%", 10, geo)}${stats(pts, "rh", h0, head.iv)}</div>
+    <footer>A reading every ${head.iv} minutes. The full history is in history.csv on the box,
+      copy it off over USB-C. Nothing on this page is sent anywhere.</footer>`;
+}
+
+window.addEventListener("hashchange", render);
+render();
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
