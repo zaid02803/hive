@@ -143,10 +143,14 @@ function render() {
     warns.push("No new readings since " + fmtTime(head.tmin * 60000) + ". The battery may be flat.");
   const when = head.tmin ? `Updated ${ago(head.tmin * 60000)}, ${fmtTime(head.tmin * 60000)}` : "Latest reading";
   const batt = head.mv ? `Battery ${head.pct}%` : "";
+  const nextMs = head.tmin ? (head.tmin + head.iv) * 60000 : 0;
+  const mins = Math.round((nextMs - Date.now()) / 60000);
+  const next = nextMs && mins >= 0 && mins <= head.iv
+    ? `Next reading ${mins < 1 ? "any moment" : "in " + mins + " min"}, ${new Date(nextMs).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "";
   const t1 = v => v.toFixed(1) + " °C", h0 = v => v.toFixed(0) + "%";
   app.innerHTML = `
     <h1>Hive ${hive}</h1>
-    <p class="sub">${when}${batt ? " · " + batt : ""}</p>
+    <p class="sub">${when}${batt ? " · " + batt : ""}${next ? "<br>" + next : ""}</p>
     ${warns.map(w => `<div class="warn">${w}</div>`).join("")}
     <div class="now">
       <div class="card temp"><div class="label">Temperature</div>
