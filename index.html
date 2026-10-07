@@ -157,9 +157,7 @@ function render() {
     <div class="card chart"><div class="row"><h2>Temperature, last 7 days</h2><span class="label">°C</span></div>
       ${chart(pts, "temp", "var(--temp)", "°C", 4, geo)}${stats(pts, "temp", t1, head.iv)}</div>
     <div class="card chart"><div class="row"><h2>Humidity, last 7 days</h2><span class="label">%</span></div>
-      ${chart(pts, "rh", "var(--hum)", "%", 10, geo)}${stats(pts, "rh", h0, head.iv)}</div>
-    <footer>A reading every ${head.iv} minutes. The full history is in history.csv on the box,
-      copy it off over USB-C. Nothing on this page is sent anywhere.</footer>`;
+      ${chart(pts, "rh", "var(--hum)", "%", 10, geo)}${stats(pts, "rh", h0, head.iv)}</div>`;
 }
 
 window.addEventListener("hashchange", render);
