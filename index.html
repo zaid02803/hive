@@ -349,7 +349,8 @@ function render() {
         <span class="btns"><button data-act="save7">Save CSV</button> <button data-act="share7">Share</button></span></div>
       ${kept.length ? `<div class="row"><span class="small">On this phone, ${kept.length} readings since ${fmtDay(kept[0].t)}</span>
         <span class="btns"><button data-act="saveall">Save all</button> <button data-act="shareall">Share</button></span></div>
-      <p class="hint">This phone keeps every reading it has seen, as long as this page is opened at least once a week. The box keeps everything for a laptop.</p>` : ""}
+      <p class="hint">This phone keeps every reading it has seen, as long as this page is opened at least once a week.</p>` : ""}
+      <p class="hint">Full history, for a laptop. Plug a laptop into the box's USB-C port and leave it. The HIVE${hive} drive appears within half an hour, because the box sleeps between readings. It stays until you unplug, apart from a blink of a few seconds every half hour. Copy history.csv from it.</p>
     </div>`;
   outRefresh().catch(() => {});
 }
