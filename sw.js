@@ -1,5 +1,5 @@
 // Keeps the page on the phone so a tap works with no signal at the hive.
-const CACHE = "hive-v3";
+const CACHE = "hive-v4";
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(["./", "./index.html"])));
   self.skipWaiting();
@@ -9,6 +9,8 @@ self.addEventListener("activate", e => {
   self.clients.claim();
 });
 self.addEventListener("fetch", e => {
+  // The weather request goes straight to the network, so offline never replays an old answer as a fresh one.
+  if (new URL(e.request.url).origin !== self.location.origin) return;
   e.respondWith(fetch(e.request).then(r => {
     const copy = r.clone();
     caches.open(CACHE).then(c => c.put(e.request, copy));
