@@ -38,14 +38,7 @@
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 13px; color: var(--muted); }
   .stats b { display: block; color: var(--ink); font-size: 15px; font-weight: 600; }
   .row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-  .files .row { padding: 6px 0; }
-  .files .row ~ .row { border-top: 1px solid var(--line); }
-  .files .hint + .row { margin-top: 8px; }
-  .btns { white-space: nowrap; }
-  button { font: inherit; font-size: 13px; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line);
-           background: var(--bg); color: var(--ink); }
-  button:active { opacity: 0.6; }
-  .hint { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+  .note { font-size: 14px; margin: 0; }
   .key { color: var(--muted); font-size: 12px; margin: 2px 0 10px; }
   .key i { display: inline-block; width: 14px; border-top: 1.5px solid var(--out); margin-right: 6px; vertical-align: middle; }
   .key a { color: inherit; }
@@ -104,51 +97,17 @@ function condensation(pts, iv) {
          `so check the inner cover and the walls for drops.`;
 }
 
-// ---- readings as a file, straight from the phone ----
-
-const two = n => String(n).padStart(2, "0");
-const local = ms => { const d = new Date(ms); return `${d.getFullYear()}-${two(d.getMonth() + 1)}-${two(d.getDate())} ${two(d.getHours())}:${two(d.getMinutes())}`; };
-const utc = ms => new Date(ms).toISOString().slice(0, 16).replace("T", " ");
-function csv(rows) {
-  return "time_local,time_utc,temp_c,humidity_pct\n" + rows.map(r =>
-    `${r.t ? local(r.t) : ""},${r.t ? utc(r.t) : ""},${r.temp.toFixed(2)},${r.rh.toFixed(1)}`).join("\n") + "\n";
-}
-function save(name, text) {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob([text], { type: "text/csv" }));
-  a.download = name;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 20000);
-}
-async function share(name, text) {
-  const file = new File([text], name, { type: "text/csv" });
-  if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: name }); } catch (e) {}
-  } else {
-    save(name, text);
-  }
-}
-
-// ---- the phone remembers every reading it has seen, per hive ----
+// ---- the phone remembers the battery at each tap, per hive, for the outlook ----
 
 const key = hive => "hive" + (hive || "x");
-function remember(hive, head, pts) {
-  if (!head.tmin) return null;
+function logBattery(hive, head) {
+  if (!head.tmin) return;
   try {
-    const k = key(hive), db = JSON.parse(localStorage.getItem(k) || "{}");
-    for (const p of pts) db[p.t / 60000] = [Math.round(p.temp * 100) / 100, Math.round(p.rh * 10) / 10];
-    const cutoff = head.tmin - 3 * 365 * 1440;
-    for (const m of Object.keys(db)) if (+m < cutoff) delete db[m];
-    localStorage.setItem(k, JSON.stringify(db));
-    const bk = k + ":battery", bl = JSON.parse(localStorage.getItem(bk) || "[]");
+    const bk = key(hive) + ":battery", bl = JSON.parse(localStorage.getItem(bk) || "[]");
     if (!bl.length || bl[bl.length - 1][0] !== head.tmin) bl.push([head.tmin, head.mv, head.pct]);
     localStorage.setItem(bk, JSON.stringify(bl.slice(-500)));
-    return db;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) {}
 }
-const rowsOf = db => Object.keys(db).map(Number).sort((a, b) => a - b).map(m => ({ t: m * 60000, temp: db[m][0], rh: db[m][1] }));
 
 // Battery outlook from the taps this phone has seen: needs two taps at least two days apart.
 function outlook(hive, head) {
@@ -314,8 +273,8 @@ function render() {
   }
   const { head, pts } = data, latest = pts[pts.length - 1];
   const geo = { n: data.n, iv: head.iv, tmin: head.tmin };
-  const db = remember(hive, head, pts);
-  Object.assign(state, { hive, pts, db, head, geo, out: outPoints(outCached()) });
+  logBattery(hive, head);
+  Object.assign(state, { hive, pts, head, geo, out: outPoints(outCached()) });
   const warns = [];
   if (head.flags & 1) warns.push("The box's clock isn't set, so the times are missing.");
   if (head.flags & 2) warns.push("Battery is low. Charge it soon.");
@@ -325,13 +284,13 @@ function render() {
   const wet = condensation(pts, head.iv);
   if (wet) warns.push(wet);
   const when = head.tmin ? `Updated ${ago(head.tmin * 60000)}, ${fmtTime(head.tmin * 60000)}` : "Latest reading";
-  const power = head.flags & 16 ? "charging" : head.flags & 32 ? "on USB" : "on battery";
+  const at = head.tmin ? " at " + new Date(head.tmin * 60000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "";
+  const power = head.flags & 16 ? "charging" + at : head.flags & 32 ? "on USB" + at : "on battery";
   const batt = head.mv ? `Battery ${head.pct}%, ${power}${outlook(hive, head)}` : "";
   const nextMs = head.tmin ? (head.tmin + head.iv) * 60000 : 0;
   const mins = Math.round((nextMs - Date.now()) / 60000);
   const next = nextMs && mins >= 0 && mins <= head.iv
     ? `Next reading ${mins < 1 ? "any moment" : "in " + mins + " min"}, ${new Date(nextMs).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "";
-  const kept = db ? rowsOf(db) : [];
   app.innerHTML = `
     <h1>Hive ${hive}</h1>
     <p class="sub">${when}${batt ? " · " + batt : ""}${next ? "<br>" + next : ""}</p>
@@ -345,26 +304,12 @@ function render() {
     <div class="card" id="tcard">${tempCard()}</div>
     <div class="card"><div class="row"><h2>Humidity, last 7 days</h2><span class="label">%</span></div>
       ${chart(pts, "rh", "var(--hum)", "%", 10, geo)}${stats(pts, "rh", h0, head.iv)}</div>
-    <div class="card files"><h2>Readings as a file</h2>
-      <div class="row"><span class="small">Last 7 days from the box, ${pts.length} readings</span>
-        <span class="btns"><button data-act="save7">Save CSV</button> <button data-act="share7">Share</button></span></div>
-      <p class="hint">Full history, for a laptop. Plug a laptop into the box's USB-C port and leave it. The HIVE${hive} drive appears within half an hour, because the box sleeps between readings. It stays until you unplug, apart from a few-second blink every half hour. Copy history.csv from it.</p>
-      ${kept.length ? `<div class="row"><span class="small">On this phone, ${kept.length} readings since ${fmtDay(kept[0].t)}</span>
-        <span class="btns"><button data-act="saveall">Save all</button> <button data-act="shareall">Share</button></span></div>
-      <p class="hint">This phone keeps every reading it has seen, as long as this page is opened at least once a week. The box keeps everything for a laptop.</p>` : ""}
+    <div class="card"><h2>Full history</h2>
+      <p class="note">To collect the full history, plug the box into a PC and wait up to ${head.iv} minutes. The box wakes once every ${head.iv} minutes to take a reading, and that is when it notices the PC. A drive called HIVE${hive} then appears with history.csv on it and stays until you unplug.</p>
     </div>`;
   outRefresh().catch(() => {});
 }
 
-document.getElementById("app").addEventListener("click", e => {
-  const b = e.target.closest("button[data-act]");
-  if (!b) return;
-  const day = new Date().toISOString().slice(0, 10), tag = "hive" + (state.hive || "");
-  const all = b.dataset.act.endsWith("all");
-  const text = csv(all ? rowsOf(state.db) : state.pts);
-  const name = `${tag}_${all ? "all" : "7days"}_${day}.csv`;
-  b.dataset.act.startsWith("share") ? share(name, text) : save(name, text);
-});
 
 window.addEventListener("hashchange", render);
 window.addEventListener("online", () => outRefresh().catch(() => {}));

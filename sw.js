@@ -1,5 +1,5 @@
 // Keeps the page on the phone so a tap works with no signal at the hive.
-const CACHE = "hive-v6";
+const CACHE = "hive-v7";
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(["./", "./index.html"])));
   self.skipWaiting();
