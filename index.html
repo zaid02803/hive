@@ -34,6 +34,7 @@
           font-size: 14px; margin-bottom: 12px; }
   svg { display: block; width: 100%; height: auto; }
   .axis { fill: var(--muted); font-size: 11px; }
+  .axis.last { font-size: 12px; font-weight: 600; }
   .grid { stroke: var(--line); stroke-width: 1; }
   .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 13px; color: var(--muted); }
   .stats b { display: block; color: var(--ink); font-size: 15px; font-weight: 600; }
@@ -211,9 +212,17 @@ function chart(pts, key, color, unit, minSpan, head, o) {
               `<text class="axis" x="${gx + 3}" y="${H - 6}">${new Date(t).toLocaleDateString([], { weekday: "short" })}</text>`;
     }
   }
-  const ticks = [hi - pad, lo + pad].map(v =>
-    `<text class="axis" x="${L - 4}" y="${y(v) + 4}" text-anchor="end">${v.toFixed(0)}</text>` +
-    `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke-dasharray="2 4"/>`).join("");
+  // a labelled gridline every 1, 2, 5 or 10 units, whichever gives 3 to 6 lines
+  const step = [0.5, 1, 2, 5, 10, 20].find(st => (hi - lo) / st <= 6) || 20;
+  const ticks = [];
+  for (let v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) {
+    if (y(v) < T + 6 || y(v) > H - B - 2) continue;
+    ticks.push(`<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke-dasharray="2 4"/>` +
+               `<text class="axis" x="${L - 4}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${step < 1 ? v.toFixed(1) : v.toFixed(0)}</text>`);
+  }
+  const last = pts[pts.length - 1];                   // a dot on the latest reading, with its value
+  const dot = `<circle cx="${x(last).toFixed(1)}" cy="${y(last[key]).toFixed(1)}" r="4" fill="${color}"/>` +
+              `<text class="axis last" x="${(x(last) - 7).toFixed(1)}" y="${(y(last[key]) - 8).toFixed(1)}" text-anchor="end" fill="${color}">${last[key].toFixed(key === "temp" ? 1 : 0)}${unit}</text>`;
   let under = "";
   if (o) {                                             // the outside line, same time axis, same degrees
     const end = head.tmin * 60000, start = end - span * 60000;
@@ -227,7 +236,7 @@ function chart(pts, key, color, unit, minSpan, head, o) {
             `<path d="${od}" fill="none" stroke="var(--out)" stroke-width="1.5" stroke-linejoin="round" clip-path="url(#tclip)"/>`;
   }
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${key === "temp" ? "Temperature" : "Humidity"} over the last 7 days${o ? ", with the temperature outside" : ""}">
-    ${grid}${ticks}${under}<path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/></svg>`;
+    ${grid}${ticks.join("")}${under}<path d="${d}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round"/>${dot}</svg>`;
 }
 
 function stats(pts, key, fmt, iv) {
