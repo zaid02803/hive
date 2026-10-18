@@ -261,6 +261,14 @@ function paintTemp() {                                 // redraw just this card 
   try { el.innerHTML = tempCard(); } catch (e) {}
 }
 
+const WAKE_MIN = 15;                                   // the box wakes on these marks of the clock to look for a computer
+function nextWake() {
+  const step = WAKE_MIN * 60000, at = Math.ceil(Date.now() / step) * step, mins = Math.round((at - Date.now()) / 60000);
+  const clock = new Date(at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return mins < 1 ? "any moment now, " + clock : "in " + mins + " min, " + clock;
+}
+setInterval(() => { const el = document.getElementById("nextwake"); if (el) el.textContent = nextWake(); }, 20000);
+
 function render() {
   const app = document.getElementById("app");
   const hive = new URLSearchParams(location.search).get("h") || "";
@@ -305,7 +313,8 @@ function render() {
     <div class="card"><div class="row"><h2>Humidity, last 7 days</h2><span class="label">%</span></div>
       ${chart(pts, "rh", "var(--hum)", "%", 10, geo)}${stats(pts, "rh", h0, head.iv)}</div>
     <div class="card"><h2>Full history</h2>
-      <p class="note">To collect the full history, plug the box into a PC and wait up to 15 minutes. The box wakes every 15 minutes to look for a PC and every ${head.iv} minutes to take a reading. A drive called HIVE${hive} then appears with history.csv on it and stays until you unplug.</p>
+      <p class="note">To collect the full history, plug the box into a computer and leave it. The box wakes every ${WAKE_MIN} minutes to look for a computer and every ${head.iv} minutes to take a reading. A drive called HIVE${hive} then appears with history.csv on it and stays until you unplug.</p>
+      <p class="note" style="margin-top:8px"><b>Plugged in now?</b> The drive shows up the next time the box wakes, <span id="nextwake">${nextWake()}</span>.</p>
     </div>`;
   outRefresh().catch(() => {});
 }
