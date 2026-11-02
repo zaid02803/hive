@@ -297,7 +297,7 @@ function render() {
   if (head.flags & 2) warns.push("Battery is low. Charge it soon.");
   if (head.flags & 4) warns.push("The sensor didn't answer on the last reading. Check the long cable.");
   if (head.tmin && Date.now() - head.tmin * 60000 > (2 * head.iv + 30) * 60000)
-    warns.push("No new readings since " + fmtTime(head.tmin * 60000) + ". The battery may be flat.");
+    warns.push("Readings end at " + fmtTime(head.tmin * 60000) + ". Tap the box for newer ones. If a fresh tap shows the same time, the battery may be flat.");
   const wet = condensation(pts, head.iv);
   if (wet) warns.push(wet);
   const when = head.tmin ? `Updated ${ago(head.tmin * 60000)}, ${fmtTime(head.tmin * 60000)}` : "Latest reading";
